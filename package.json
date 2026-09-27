@@ -1,0 +1,49 @@
+{
+  "name": "fun-login-helper",
+  "version": "1.0.0",
+  "description": "公立はこだて未来大学の SSO へのログインまでの画面操作を補助する Chrome 拡張機能",
+  "homepage": "https://github.com/urmshr/fun-login-helper",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/urmshr/fun-login-helper.git"
+  },
+  "author": "urmshr",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
+  "scripts": {
+    "build": "pnpm type-check && webpack --mode=production",
+    "build:dev": "webpack --mode=development",
+    "dev": "webpack --mode=development --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "check-all": "pnpm type-check && pnpm lint && pnpm format:check",
+    "package": "pnpm build && cd dist && zip -r ../fun-login-helper.zip ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/chrome": "^0.3.0",
+    "copy-webpack-plugin": "^13.0.0",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.0.3",
+    "ts-loader": "^9.4.4",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.70.1",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "keywords": [
+    "chrome-extension",
+    "login-helper",
+    "fun",
+    "typescript"
+  ]
+}
