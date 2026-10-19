@@ -9,8 +9,9 @@ const elements: PopupElements = {
 };
 
 const MESSAGES = {
-  BLOCKED:
-    'ログイン失敗によりログイン補助を一時停止中です。HOPE にログインすると自動で解除されます',
+  BLOCKED: 'ログイン補助を一時停止中です。HOPE にログインすると自動で解除されます',
+  LOGGED_OUT:
+    'ログアウトしたため、ログイン補助を止めています。HOPE の「ログイン」を押すと再開します',
   RESET_SUCCESS: 'ログイン制限を解除しました。次回アクセス時からログイン補助を再開します',
   SAVE_FAILED: '設定の保存に失敗しました',
   LOAD_FAILED: '設定の読み込みに失敗しました',
@@ -61,7 +62,7 @@ const handleToggleChange = async (): Promise<void> => {
 };
 
 /**
- * ログイン失敗によるブロック状態を解除する
+ * ログイン補助の一時停止を解除し、試行履歴を消去する
  */
 const handleResetBlock = async (): Promise<void> => {
   try {
@@ -79,7 +80,7 @@ const handleResetBlock = async (): Promise<void> => {
  */
 const loadSettings = async (): Promise<void> => {
   try {
-    const items = await chrome.storage.local.get<StorageItems>(['enabled', 'blocked']);
+    const items = await chrome.storage.local.get<StorageItems>(['enabled', 'blocked', 'loggedOut']);
 
     const toggle = elements.enableToggle();
     if (toggle) {
@@ -90,6 +91,8 @@ const loadSettings = async (): Promise<void> => {
     if (items.blocked === true) {
       showStatus(MESSAGES.BLOCKED, 'error');
       setResetButtonVisible(true);
+    } else if (items.loggedOut === true) {
+      showStatus(MESSAGES.LOGGED_OUT);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

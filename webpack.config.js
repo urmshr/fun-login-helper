@@ -34,7 +34,7 @@ export default (env, argv) => ({
   },
   plugins: [
     new CopyWebpackPlugin({
-      patterns: ['manifest.json', 'popup.html', { from: 'icons', to: 'icons' }],
+      patterns: ['manifest.json', 'popup.html', 'LICENSE', { from: 'icons', to: 'icons' }],
     }),
   ],
 });

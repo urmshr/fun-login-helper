@@ -1,6 +1,6 @@
 import { URLS, SELECTORS, TEXTS, CONFIG, MESSAGES } from './constants';
 import type { StorageItems } from './types';
-import { log, waitForElement, waitForAutofill } from './utils';
+import { log, waitForElement, getStoredCredential, runBeforeLinkNavigation } from './utils';
 
 /**
  * SSOのログイン画面にエラーが表示されているかを判定する
@@ -11,8 +11,8 @@ const detectLoginFailure = (): boolean => {
 };
 
 /**
- * ログイン送信を記録する。短時間に送信を繰り返していたら記録せず、ログイン補助を一時停止する
- * @returns 送信してよければ true
+ * フォームの送信前にログインの試行を記録する。上限に達していたら記録せず、ログイン補助を一時停止する
+ * @returns フォームを送信してよければ true
  */
 const recordLoginAttempt = async (): Promise<boolean> => {
   const now = Date.now();
@@ -63,7 +63,7 @@ const handleLoginSelectionPage = async (): Promise<void> => {
 };
 
 /**
- * SSOのログイン画面で、パスワードマネージャーによる入力を待って送信する
+ * SSOのログイン画面で、ブラウザに保存されたログイン情報を入力し、フォームを送信する
  */
 const handleSSOPage = async (): Promise<void> => {
   // ログインに失敗していたら、以降のログイン補助を一時停止する
@@ -81,13 +81,34 @@ const handleSSOPage = async (): Promise<void> => {
     return;
   }
 
-  // パスワードマネージャーに自動入力を促す
-  usernameField.focus();
+  // ブラウザに保存されたログイン情報を受け取って入力する
+  const credential = await getStoredCredential();
+  if (!credential) {
+    log(MESSAGES.CREDENTIAL_UNAVAILABLE, 'warn');
+    return;
+  }
 
-  // 両フィールドが充填されるまで待機する
-  const filled = await waitForAutofill([usernameField, passwordField]);
-  if (!filled) {
-    log('自動入力が検出されなかったため、ログイン送信をスキップします', 'warn');
+  // 確認ダイアログへの応答を待つ間に状態が変わることがあるため、送信前に再確認する
+  if (detectLoginFailure()) {
+    log(MESSAGES.LOGIN_FAILURE_DETECTED, 'error');
+    await chrome.storage.local.set<StorageItems>({ blocked: true });
+    return;
+  }
+
+  const { enabled, blocked, loggedOut } = await chrome.storage.local.get<StorageItems>([
+    'enabled',
+    'blocked',
+    'loggedOut',
+  ]);
+  if (enabled === false) {
+    return;
+  }
+  if (blocked) {
+    log(MESSAGES.LOGIN_BLOCKED, 'warn');
+    return;
+  }
+  if (loggedOut) {
+    log(MESSAGES.LOGGED_OUT, 'warn');
     return;
   }
 
@@ -96,6 +117,8 @@ const handleSSOPage = async (): Promise<void> => {
     return;
   }
 
+  usernameField.value = credential.id;
+  passwordField.value = credential.password;
   submitButton.click();
 };
 
@@ -121,18 +144,20 @@ const routeByURL = async (): Promise<void> => {
  */
 const main = async (): Promise<void> => {
   try {
-    const { enabled, blocked, loginAttempts } = await chrome.storage.local.get<StorageItems>([
-      'enabled',
-      'blocked',
-      'loginAttempts',
-    ]);
+    const { enabled, blocked, loginAttempts, loggedOut } =
+      await chrome.storage.local.get<StorageItems>([
+        'enabled',
+        'blocked',
+        'loginAttempts',
+        'loggedOut',
+      ]);
 
     // 未設定（undefined）は有効とみなす
     if (enabled === false) {
       return;
     }
 
-    // ログイン済みなら、送信の記録を消し、一時停止中であれば解除して終了する
+    // ログイン済みなら、試行履歴を消去し、一時停止を解除して終了する
     if (isLoggedInOnHope()) {
       if (loginAttempts) {
         await chrome.storage.local.remove<StorageItems>('loginAttempts');
@@ -141,11 +166,28 @@ const main = async (): Promise<void> => {
         await chrome.storage.local.remove<StorageItems>('blocked');
         log('ログイン済みのため、ログイン制限を解除しました', 'warn');
       }
+      if (loggedOut) {
+        await chrome.storage.local.remove<StorageItems>('loggedOut');
+      }
+
+      // ログアウトしたら、ユーザーが自分でログインを始めるまでログイン補助を止める
+      runBeforeLinkNavigation(SELECTORS.LOGOUT_LINK, () =>
+        chrome.storage.local.set<StorageItems>({ loggedOut: true })
+      );
       return;
     }
 
     if (blocked) {
       log(MESSAGES.LOGIN_BLOCKED, 'warn');
+      return;
+    }
+
+    if (loggedOut) {
+      log(MESSAGES.LOGGED_OUT, 'warn');
+      // ユーザーが自分で「ログイン」か「未来大の学生・教職員」を押したら、以降の操作を補助する
+      runBeforeLinkNavigation(`${SELECTORS.LOGIN_BUTTON}, ${SELECTORS.SSO_LOGIN_LINK}`, () =>
+        chrome.storage.local.remove<StorageItems>('loggedOut')
+      );
       return;
     }
 

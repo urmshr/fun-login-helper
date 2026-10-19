@@ -1,4 +1,4 @@
-import type { LogType } from './types';
+import type { LogType, PasswordCredential } from './types';
 import { CONFIG } from './constants';
 
 /**
@@ -21,79 +21,52 @@ export const log = (message: string, type: LogType = 'warn'): void => {
 };
 
 /**
- * 指定された入力欄がパスワードマネージャー等により自動入力されたかを判定
- * @param el 対象の input 要素
- * @returns 自動入力（またはユーザー入力）済みなら true
+ * ブラウザに保存されたログイン情報を Credential Management API で受け取る
+ * （自動ログインできる状態なら確認なしで、そうでなければ確認画面またはアカウント選択画面で選ばれたものを受け取る）
+ * @returns 受け取ったログイン情報。未対応、またはキャンセルされたら null
  */
-const isFieldFilled = (el: HTMLInputElement): boolean => {
-  if (el.value.length > 0) {
-    return true;
+export const getStoredCredential = async (): Promise<PasswordCredential | null> => {
+  if (!('PasswordCredential' in window)) {
+    return null;
   }
 
-  // ユーザー操作前の自動入力値はスクリプトから読めないため、疑似クラスでも判定する
-  for (const selector of [':-webkit-autofill', ':autofill']) {
-    try {
-      if (el.matches(selector)) {
-        return true;
-      }
-    } catch {
-      // 未対応セレクタは無視
-    }
-  }
-
-  return false;
+  const credential = await navigator.credentials.get({ password: true, mediation: 'optional' });
+  return credential?.type === 'password' ? (credential as PasswordCredential) : null;
 };
 
 /**
- * すべての入力欄が自動入力されるまで待機する
- * @param fields 監視する input 要素の配列
- * @param timeout タイムアウト時間（ミリ秒）
- * @returns すべて充填されたら true、タイムアウトしたら false
+ * 指定されたセレクタのリンクがクリックされたら、遷移の前に処理を実行する
+ * （遷移でページが破棄される前に、ストレージへの保存を終わらせるため）
+ * @param selector 対象のリンクのCSSセレクタ
+ * @param task 遷移の前に実行する処理
  */
-export const waitForAutofill = (
-  fields: HTMLInputElement[],
-  timeout: number = CONFIG.AUTOFILL_TIMEOUT
-): Promise<boolean> => {
-  return new Promise(resolve => {
-    const allFilled = (): boolean => fields.every(isFieldFilled);
-
-    // 既に充填済みならすぐに解決
-    if (allFilled()) {
-      resolve(true);
-      return;
-    }
-
-    let settled = false;
-    const finish = (result: boolean): void => {
-      if (settled) {
+export const runBeforeLinkNavigation = (selector: string, task: () => Promise<void>): void => {
+  document.addEventListener(
+    'click',
+    event => {
+      // 新しいタブで開くなどの操作は、ブラウザの標準動作に任せる
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
         return;
       }
-      settled = true;
-      clearInterval(intervalId);
-      clearTimeout(timeoutId);
-      fields.forEach(field => {
-        field.removeEventListener('input', check);
-        field.removeEventListener('change', check);
-      });
-      resolve(result);
-    };
 
-    // クリック選択による充填は input/change イベントで即座に検知
-    const check = (): void => {
-      if (allFilled()) {
-        finish(true);
+      // ユーザーメニューは後から描画されるため、クリックされた要素から判定する
+      const link = (event.target as Element | null)?.closest<HTMLAnchorElement>(selector);
+      if (!link) {
+        return;
       }
-    };
 
-    fields.forEach(field => {
-      field.addEventListener('input', check);
-      field.addEventListener('change', check);
-    });
-
-    // 読込時自動入力（イベントが発火しない）のためのポーリング
-    const intervalId = setInterval(check, CONFIG.AUTOFILL_POLL_INTERVAL);
-    const timeoutId = setTimeout(() => finish(false), timeout);
-  });
+      event.preventDefault();
+      task()
+        .catch(error => {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          log(`遷移前の処理に失敗しました: ${errorMessage}`, 'error');
+        })
+        // 処理に失敗しても、ユーザーが押したリンクには遷移する
+        .finally(() => window.location.assign(link.href));
+    },
+    // ページ側の処理より先に受け取る
+    true
+  );
 };
 
 /**

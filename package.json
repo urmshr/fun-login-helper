@@ -1,6 +1,6 @@
 {
   "name": "fun-login-helper",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "公立はこだて未来大学の SSO へのログインまでの画面操作を補助する Chrome 拡張機能",
   "homepage": "https://github.com/urmshr/fun-login-helper",
   "repository": {
